@@ -14,15 +14,23 @@
  */
 
 #include "enclave_t.h"
+#include "stdlib.h"
+#include "string.h"
 
 //unsigned int array1_size = 16;
 uint8_t unused1[64];
 uint8_t array1[160] = { 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16 };
 uint8_t unused2[64];
 
-char *secret = "The Magic Words are Squeamish Ossifrage.";
+char *secret;
 
 uint8_t temp = 0; /* Used so compiler won’t optimize out victim_function() */
+
+void ecall_store_secret(const char *p_secret_in) {
+	size_t secret_size = strlen(p_secret_in);
+	secret = (char *) calloc(secret_size + 1, sizeof(char));
+	memcpy(secret, p_secret_in, secret_size);
+}
 
 size_t ecall_get_offset() { 
 	temp = secret[0]; //Bring secrete into cache.

